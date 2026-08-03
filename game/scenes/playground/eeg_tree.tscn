@@ -1,0 +1,49 @@
+[gd_scene load_steps=2 format=3 uid="uid://eegtreemed01"]
+
+[ext_resource type="Script" path="res://scripts/eeg_tree.gd" id="1_script"]
+
+[node name="EegTree" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="Sky" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.12, 0.18, 0.22, 1)
+
+[node name="Canopy" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="HUD" type="Label" parent="."]
+layout_mode = 0
+offset_left = 28.0
+offset_top = 20.0
+offset_right = 900.0
+offset_bottom = 140.0
+theme_override_colors/font_color = Color(0.9, 0.93, 0.88, 0.9)
+theme_override_font_sizes/font_size = 15
+text = "MEDITATION TREE"
+
+[node name="BackButton" type="Button" parent="."]
+layout_mode = 0
+offset_left = 28.0
+offset_top = 640.0
+offset_right = 180.0
+offset_bottom = 684.0
+text = "← Hub"

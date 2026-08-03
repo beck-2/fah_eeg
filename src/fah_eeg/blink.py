@@ -21,7 +21,7 @@ class BlinkDetector:
     lag: int = 128  # ~0.5s baseline window for z-score
     threshold: float = 3.5
     influence: float = 0.2
-    refractory_sec: float = 0.30
+    refractory_sec: float = 0.15
     min_buffer_sec: float = 1.0
 
     _buf: np.ndarray | None = None

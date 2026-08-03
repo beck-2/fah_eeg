@@ -84,8 +84,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--blink-refractory",
         type=float,
-        default=0.30,
-        help="Minimum seconds between blink events (default 0.30).",
+        default=0.15,
+        help="Minimum seconds between blink events (default 0.15; allows double-blink).",
     )
     parser.add_argument(
         "--demo",
@@ -258,7 +258,8 @@ def live_loop(args: argparse.Namespace) -> None:
     )
     print(
         "Calm/focus: adaptive rolling z-scores "
-        "(post α/(α+β+½θ) vs front engagement β/(α+θ) + inv TBR), ~45s baseline",
+        "(post α/(α+β+½θ) vs front engagement β/(α+θ) + inv TBR), "
+        "~45s baseline, feature τ=1.5s + output τ=3s EMA",
         flush=True,
     )
     recorder: SessionRecorder | None = None
