@@ -12,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 from brainflow.board_shim import BoardShim
+from brainflow.board_shim import BrainFlowPresets
 from brainflow.data_filter import DataFilter, DetrendOperations, WindowOperations
 
 from fah_eeg.blink import BlinkDetector
@@ -22,6 +23,7 @@ from fah_eeg.board import (
     muse_session,
     wait_for_board_data,
 )
+from fah_eeg.mental_state import MentalStateTracker
 from fah_eeg.pidfile import clear_pid, write_pid
 from fah_eeg.session_io import SessionRecorder, default_session_path
 
@@ -49,28 +51,41 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=60.0,
         help="Feature emit rate for calm/focus packets (default 60). Blink events are immediate.",
     )
-    parser.add_argument("--window-sec", type=float, default=1.5)
+    parser.add_argument(
+        "--window-sec",
+        type=float,
+        default=2.0,
+        help="Welch window for band powers (default 2.0s).",
+    )
     parser.add_argument("--serial-number", default=None)
     parser.add_argument("--mac-address", default=None)
     parser.add_argument("--preset", default=None)
     parser.add_argument("--pid-file", type=Path, default=None)
     parser.add_argument(
         "--record",
+        dest="record",
         action="store_true",
-        help="Also write a full CSV session while streaming.",
+        default=True,
+        help="Write a CSV session while streaming (default on for live Muse).",
+    )
+    parser.add_argument(
+        "--no-record",
+        dest="record",
+        action="store_false",
+        help="Disable CSV recording.",
     )
     parser.add_argument("--out", type=Path, default=None)
     parser.add_argument(
         "--blink-z",
         type=float,
-        default=3.8,
-        help="BrainFlow detect_peaks_z_score threshold (default 3.8). Lower = more sensitive.",
+        default=3.5,
+        help="BrainFlow detect_peaks_z_score threshold (default 3.5). Lower = more sensitive.",
     )
     parser.add_argument(
         "--blink-refractory",
         type=float,
-        default=0.32,
-        help="Minimum seconds between blink events (default 0.32).",
+        default=0.30,
+        help="Minimum seconds between blink events (default 0.30).",
     )
     parser.add_argument(
         "--demo",
@@ -87,6 +102,10 @@ def band_powers(signal: np.ndarray, sampling_rate: int) -> dict[str, float]:
     data = signal.astype(np.float64).copy()
     DataFilter.detrend(data, DetrendOperations.CONSTANT.value)
     nfft = DataFilter.get_nearest_power_of_two(sampling_rate)
+    if nfft >= len(data):
+        nfft = nfft // 2
+    if nfft < 16:
+        return {name: 0.0 for name, _, _ in BANDS}
     overlap = nfft // 2
     try:
         psd = DataFilter.get_psd_welch(
@@ -112,12 +131,6 @@ def band_powers(signal: np.ndarray, sampling_rate: int) -> dict[str, float]:
 def relative_bands(powers: dict[str, float]) -> dict[str, float]:
     total = sum(powers.values()) + 1e-18
     return {k: v / total for k, v in powers.items()}
-
-
-def ema(prev: float | None, value: float, alpha: float) -> float:
-    if prev is None:
-        return value
-    return prev * (1.0 - alpha) + value * alpha
 
 
 def send_json(sock: socket.socket, host: str, port: int, payload: dict) -> None:
@@ -231,8 +244,7 @@ def live_loop(args: argparse.Namespace) -> None:
         threshold=args.blink_z,
         refractory_sec=args.blink_refractory,
     )
-    calm_s: float | None = None
-    focus_s: float | None = None
+    state = MentalStateTracker(emit_hz=args.hz, baseline_sec=45.0)
     interval = 1.0 / max(args.hz, 1.0)
     next_emit = time.monotonic()
     blink_count = 0
@@ -242,6 +254,11 @@ def live_loop(args: argparse.Namespace) -> None:
         "Blink: BrainFlow notch + bandpass(0.5–10Hz) + detect_peaks_z_score "
         f"thr={args.blink_z:g} refractory={args.blink_refractory:g}s "
         f"front={[names[eeg_channels.index(c)] if c in eeg_channels else c for c in front_chs]}",
+        flush=True,
+    )
+    print(
+        "Calm/focus: adaptive rolling z-scores "
+        "(post α/(α+β+½θ) vs front engagement β/(α+θ) + inv TBR), ~45s baseline",
         flush=True,
     )
     recorder: SessionRecorder | None = None
@@ -256,8 +273,14 @@ def live_loop(args: argparse.Namespace) -> None:
                 raise RuntimeError("No samples received from Muse 2.")
             if out is not None:
                 recorder = SessionRecorder(out)
+                recorder.ingest_sidebands(board)
                 recorder.write_matrix(first)
                 print(f"Also recording CSV → {out}", flush=True)
+                print(
+                    "CSV columns: EEG + accel/gyro + ppg + heart_rate_bpm/oxygen_pct "
+                    "(IMU/PPG forward-filled onto EEG rows)",
+                    flush=True,
+                )
 
             for ch in eeg_channels:
                 buffers[ch] = first[ch].astype(np.float64).copy()
@@ -268,12 +291,19 @@ def live_loop(args: argparse.Namespace) -> None:
             print("Streaming · blink events immediate · features @{:.0f} Hz".format(args.hz), flush=True)
 
             while not stop["flag"]:
-                data = board.get_board_data()
                 now = time.monotonic()
+                if recorder is not None:
+                    data = recorder.push_from_board(board)
+                else:
+                    # Drain AUX/ANC so BrainFlow sideband buffers don't overflow.
+                    try:
+                        board.get_board_data(preset=BrainFlowPresets.AUXILIARY_PRESET)
+                        board.get_board_data(preset=BrainFlowPresets.ANCILLARY_PRESET)
+                    except Exception:
+                        pass
+                    data = board.get_board_data()
 
                 if data.size:
-                    if recorder is not None:
-                        recorder.write_matrix(data)
                     for ch in eeg_channels:
                         buffers[ch] = np.concatenate([buffers[ch], data[ch]])
                         if len(buffers[ch]) > window_samples * 3:
@@ -309,10 +339,7 @@ def live_loop(args: argparse.Namespace) -> None:
                         front = np.mean([buffers[ch][-window_samples:] for ch in front_chs], axis=0)
                         post_rel = relative_bands(band_powers(post, sampling_rate))
                         front_rel = relative_bands(band_powers(front, sampling_rate))
-                        raw_calm = float(np.clip(post_rel["alpha"] / 0.25, 0.0, 1.0))
-                        raw_focus = float(np.clip(front_rel["beta"] / 0.20, 0.0, 1.0))
-                        calm_s = ema(calm_s, raw_calm, 0.15)
-                        focus_s = ema(focus_s, raw_focus, 0.15)
+                        calm_s, focus_s = state.update(post_rel, front_rel)
                         send_json(
                             sock,
                             args.host,
@@ -322,8 +349,10 @@ def live_loop(args: argparse.Namespace) -> None:
                                 "ts": time.time(),
                                 "demo": False,
                                 "bands": post_rel,
-                                "calm": float(calm_s if calm_s is not None else raw_calm),
-                                "focus": float(focus_s if focus_s is not None else raw_focus),
+                                "front_bands": front_rel,
+                                "calm": float(calm_s),
+                                "focus": float(focus_s),
+                                "metrics": state.last_metrics,
                                 "blink": 0.0,
                                 "blink_z": 0.0,
                                 "blinks": blink_count,

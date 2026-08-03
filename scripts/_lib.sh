@@ -17,6 +17,9 @@ VIZ_LOG="$RUN_DIR/viz.log"
 STREAM_PID="$RUN_DIR/stream.pid"
 STREAM_LOG="$RUN_DIR/stream.log"
 STREAM_STATUS="$RUN_DIR/stream.status"
+PSD_PID="$RUN_DIR/psd.pid"
+PSD_OUT="$RUN_DIR/psd.out"
+PSD_LOG="$RUN_DIR/psd.log"
 
 # Avoid silent empty logs when Python stdout is redirected.
 export PYTHONUNBUFFERED=1

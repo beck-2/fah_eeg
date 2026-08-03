@@ -8,6 +8,7 @@ import sys
 import time
 from pathlib import Path
 
+import numpy as np
 from brainflow.board_shim import BoardShim
 
 from fah_eeg.board import (
@@ -133,9 +134,14 @@ def record(
 
             # Open CSV only after real data exists (avoids empty header-only files).
             with SessionRecorder(out) as recorder:
+                recorder.ingest_sidebands(board)
                 recorder.write_matrix(first)
                 print(
                     f"Recording… first packet {first.shape[1]} samples → {out}",
+                    flush=True,
+                )
+                print(
+                    "Includes accel/gyro + PPG (+ derived heart_rate/SpO2 when ready)",
                     flush=True,
                 )
                 _write_status(status_file, f"recording samples={recorder.samples_written}")
@@ -146,12 +152,12 @@ def record(
                     if deadline is not None and time.monotonic() >= deadline:
                         break
                     time.sleep(poll)
-                    data = board.get_board_data()
-                    if data.size:
-                        recorder.write_matrix(data)
+                    data = recorder.push_from_board(board)
                     now = time.monotonic()
                     if now - last_status >= 2.0:
                         msg = f"… {recorder.samples_written} samples"
+                        if np.isfinite(recorder._heart_rate):
+                            msg += f"  HR≈{recorder._heart_rate:.0f}"
                         print(msg, flush=True)
                         _write_status(
                             status_file,
@@ -159,9 +165,7 @@ def record(
                         )
                         last_status = now
 
-                data = board.get_board_data()
-                if data.size:
-                    recorder.write_matrix(data)
+                recorder.push_from_board(board)
 
                 if recorder.samples_written == 0:
                     raise RuntimeError("No samples received. Is the Muse 2 on and in range?")

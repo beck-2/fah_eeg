@@ -9,6 +9,7 @@ if [[ -f "$RECORD_STATUS" ]]; then
   echo "  status: $(tr -d '\n' <"$RECORD_STATUS")"
 fi
 job_status_line "viz" "$VIZ_PID" "$VIZ_OUT"
+job_status_line "psd" "$PSD_PID" "$PSD_OUT"
 job_status_line "stream" "$STREAM_PID" "$STREAM_STATUS"
 
 echo

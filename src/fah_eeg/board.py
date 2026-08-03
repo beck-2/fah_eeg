@@ -10,6 +10,8 @@ from brainflow.board_shim import BoardIds, BoardShim, BrainFlowInputParams
 
 
 MUSE_2_BOARD_ID = BoardIds.MUSE_2_BOARD.value
+# 4 EEG + IMU (AUX) + PPG (ANCILLARY). Use p50 if you also want the 5th EEG channel.
+DEFAULT_MUSE_PRESET = "p51"
 
 
 @dataclass
@@ -18,7 +20,7 @@ class MuseConnectionOptions:
 
     serial_number: str | None = None
     mac_address: str | None = None
-    # Muse streaming preset; empty lets BrainFlow use its default.
+    # Muse streaming preset (p51 = 4 EEG + IMU + PPG). Empty → DEFAULT_MUSE_PRESET.
     other_info: str | None = None
     timeout: int = 15
 
@@ -31,8 +33,9 @@ def build_params(options: MuseConnectionOptions | None = None) -> BrainFlowInput
         params.serial_number = options.serial_number
     if options.mac_address:
         params.mac_address = options.mac_address
-    if options.other_info:
-        params.other_info = options.other_info
+    # Also hint the preset via input params (BrainFlow Muse discovery path).
+    preset = options.other_info or DEFAULT_MUSE_PRESET
+    params.other_info = preset
     return params
 
 
@@ -42,10 +45,17 @@ def create_board(options: MuseConnectionOptions | None = None) -> BoardShim:
 
 
 def enable_brainflow_logging(level: int | None = None) -> None:
-    if level is None:
-        BoardShim.enable_dev_board_logger()
-    else:
-        BoardShim.set_log_level(level)
+    """Keep console quiet — TRACE/DEBUG from Muse BLE is extremely noisy."""
+    from brainflow.board_shim import LogLevels
+    from brainflow.data_filter import DataFilter
+
+    # Default: only real failures. Dev logger enables TRACE and floods iTerm.
+    log_level = LogLevels.LEVEL_WARN.value if level is None else level
+    BoardShim.set_log_level(log_level)
+    try:
+        DataFilter.set_log_level(log_level)
+    except Exception:
+        pass
 
 
 def eeg_channel_names(board_id: int = MUSE_2_BOARD_ID) -> list[str]:
@@ -64,10 +74,17 @@ def muse_session(
     *,
     streamer_params: str | None = None,
 ) -> Iterator[BoardShim]:
-    """Prepare, stream, and always release a Muse 2 session."""
+    """Prepare, enable full Muse streams (EEG+IMU+PPG), and always release."""
+    options = options or MuseConnectionOptions()
     board = create_board(options)
     board.prepare_session()
     try:
+        preset = options.other_info or DEFAULT_MUSE_PRESET
+        try:
+            board.config_board(preset)
+            print(f"Muse preset → {preset} (EEG + accel/gyro + PPG)", flush=True)
+        except Exception as exc:
+            print(f"Warning: config_board({preset!r}) failed: {exc}", flush=True)
         board.start_stream(450000, streamer_params or "")
         yield board
     finally:

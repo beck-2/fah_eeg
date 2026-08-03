@@ -62,6 +62,10 @@ def band_powers(signal: np.ndarray, sampling_rate: int) -> np.ndarray:
     data = signal.astype(np.float64).copy()
     DataFilter.detrend(data, DetrendOperations.CONSTANT.value)
     nfft = DataFilter.get_nearest_power_of_two(sampling_rate)
+    if nfft >= len(data):
+        nfft = nfft // 2
+    if nfft < 16:
+        return np.zeros(len(BANDS))
     overlap = nfft // 2
     try:
         psd = DataFilter.get_psd_welch(
@@ -191,17 +195,18 @@ def run_viz(args: argparse.Namespace) -> Path:
 
                     # Open CSV only after real data arrives.
                     recorder = SessionRecorder(out)
+                    recorder.ingest_sidebands(board)
                     recorder.write_matrix(first)
                     self.status.emit(
                         f"Streaming {ch_name} @ {sampling_rate} Hz | recording {out.name}"
                     )
                     print(f"Streaming {ch_name} @ {sampling_rate} Hz", flush=True)
+                    print("Recording EEG + IMU + PPG →", out.resolve(), flush=True)
                     buffer = first[board_ch].astype(np.float64).copy()
                     poll = max(args.update_ms, 50) / 1000.0
                     while not self._stop.is_set():
-                        data = board.get_board_data()
+                        data = recorder.push_from_board(board)
                         if data.size:
-                            recorder.write_matrix(data)
                             channel = data[board_ch]
                             buffer = np.concatenate([buffer, channel])
                             if len(buffer) > window_samples * 3:
@@ -217,9 +222,7 @@ def run_viz(args: argparse.Namespace) -> Path:
 
                         time.sleep(poll)
 
-                    leftover = board.get_board_data()
-                    if leftover.size:
-                        recorder.write_matrix(leftover)
+                    recorder.push_from_board(board)
             except Exception as exc:
                 traceback.print_exc()
                 self.failed.emit(str(exc))

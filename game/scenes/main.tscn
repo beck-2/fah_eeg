@@ -85,16 +85,22 @@ offset_bottom = 440.0
 theme_override_font_sizes/font_size = 18
 text = "Play Level 01 — Blink Flash"
 
+[node name="FractalButton" type="Button" parent="UI"]
+layout_mode = 0
+offset_left = 48.0
+offset_top = 460.0
+offset_right = 420.0
+offset_bottom = 520.0
+theme_override_font_sizes/font_size = 18
+text = "Fractal Playground (EEG art)"
+
 [node name="Hint" type="Label" parent="UI"]
 layout_mode = 0
 offset_left = 48.0
-offset_top = 480.0
+offset_top = 560.0
 offset_right = 1100.0
-offset_bottom = 580.0
+offset_bottom = 680.0
 theme_override_colors/font_color = Color(0.55, 0.65, 0.72, 1)
 theme_override_font_sizes/font_size = 14
-text = "Level 01: white screen flashes red 50ms on each blink.
-Start live stream first (iTerm):
-  ./scripts/start_stream.sh
-  ./scripts/start_game.sh
-Less sensitive default; tune: --blink-z 4.5 (more) or --blink-z 6 (less)"
+text = "Level 01: blink flash. Fractals: calm zooms, focus warps Julia-c, blinks punch.
+Start stream: ./scripts/start_stream.sh — then ./scripts/start_game.sh"

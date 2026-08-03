@@ -5,10 +5,12 @@ extends Node2D
 @onready var calm_bar: ProgressBar = $UI/CalmBar
 @onready var focus_bar: ProgressBar = $UI/FocusBar
 @onready var play_button: Button = $UI/PlayButton
+@onready var fractal_button: Button = $UI/FractalButton
 
 
 func _ready() -> void:
 	play_button.pressed.connect(_on_play_pressed)
+	fractal_button.pressed.connect(_on_fractal_pressed)
 	EegBus.connection_changed.connect(_on_connection_changed)
 	_on_connection_changed(EegBus.connected)
 
@@ -32,3 +34,7 @@ func _on_connection_changed(connected: bool) -> void:
 
 func _on_play_pressed() -> void:
 	get_tree().change_scene_to_file("res://scenes/levels/level_01_still_waters.tscn")
+
+
+func _on_fractal_pressed() -> void:
+	get_tree().change_scene_to_file("res://scenes/playground/eeg_fractals.tscn")
