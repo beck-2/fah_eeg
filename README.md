@@ -1,24 +1,21 @@
-# fah_eeg — Muse 2 + BrainFlow
+# fah_eeg — Muse 2 + BrainFlow + Godot game
 
-Phase 1: collect Muse 2 EEG on a Mac and watch a live band-power spectrogram. Game logic comes later.
+Collect Muse 2 EEG, stream live features, and play low-latency mind-controlled levels.
 
 ## Stack
 
-- **BrainFlow** (`MUSE_2_BOARD` / id 38) — native BLE, no dongle
-- **Python 3.11+** (this repo uses 3.13 in `.venv`)
-- **pyqtgraph + PyQt6** — live visualization
+| Layer | Tech | Role |
+|---|---|---|
+| Acquisition | **BrainFlow** (Python) | Muse 2 BLE → raw EEG |
+| Features | `fah-stream` | Band powers, calm/focus/blink @ ~30 Hz |
+| Transport | **UDP localhost :14141** | Sub-ms hop to game |
+| Game | **Godot 4.7** | Rendering, levels, HUD |
+
+Python owns the headset (proven on Mac/iTerm). Godot owns gameplay and visuals.
 
 ## Important: use iTerm for BLE
 
-macOS grants Bluetooth per app. Run recording and visualization from **iTerm2** (not Cursor’s terminal or Apple Terminal) so CoreBluetooth can talk to the Muse.
-
-```bash
-# From anywhere, launch a command in iTerm with the project venv:
-./scripts/run_in_iterm.sh fah-record --seconds 30
-./scripts/run_in_iterm.sh fah-spectrogram
-```
-
-Or open iTerm yourself, `cd` into this repo, `source .venv/bin/activate`, then run the same commands.
+macOS grants Bluetooth per app. Prefer running Muse scripts from **iTerm2**.
 
 ## Setup
 
@@ -26,47 +23,59 @@ Or open iTerm yourself, `cd` into this repo, `source .venv/bin/activate`, then r
 python3.13 -m venv .venv
 source .venv/bin/activate
 pip install -e .
+brew install --cask godot   # already installed if you followed along
 ```
 
-Power on the Muse 2, wear it with good contact, and quit the Muse mobile app if it’s connected.
-
-## Record a session
+## Play (demo — no headset)
 
 ```bash
-./scripts/run_in_iterm.sh fah-record --seconds 60
-# → data/sessions/muse2_<utc-timestamp>.csv
+cd ~/fah_eeg
+./scripts/start_stream.sh --demo
+./scripts/start_game.sh
+# later:
+./scripts/stop_stream.sh
 ```
 
-If discovery fails:
+## Play (live Muse)
 
 ```bash
-./scripts/run_in_iterm.sh fah-record --seconds 30 --serial-number Muse-XXXX
+./scripts/start_stream.sh            # or --record to also save CSV
+./scripts/start_game.sh
+./scripts/stop_stream.sh
 ```
 
-## Live spectrogram (also records)
+## Recording / spectrogram
 
 ```bash
-./scripts/run_in_iterm.sh fah-spectrogram
-# optional: --channel 0..3  (TP9 / AF7 / AF8 / TP10 typically)
-# optional: --out data/sessions/custom.csv
+./scripts/start_record.sh
+./scripts/stop_record.sh
+./scripts/start_viz.sh
+./scripts/stop_viz.sh
+./scripts/status.sh
 ```
 
-Shows scrolling log-power for delta / theta / alpha / beta / gamma plus a current bar chart. **Every board sample is drained and written to CSV** (named EEG channels + BrainFlow unix `timestamp` + `timestamp_iso`). Close the window to stop streaming and finalize the file.
+## Level 01 — Blink Flash
 
-## Mac Bluetooth checklist
+White screen flashes **red for 500ms** on each blink. Use this to judge detection accuracy before tightening flash duration.
 
-1. Muse powered on and charged  
-2. System Settings → Privacy & Security → Bluetooth → allow **iTerm**  
-3. Prefer macOS 12.3+  
-4. Only one client connected to the Muse at a time  
+```bash
+./scripts/start_stream.sh          # live Muse (iTerm)
+./scripts/start_game.sh
+# Play Level 01 — Blink Flash
+```
 
-## Layout
+Tune: `./scripts/start_stream.sh --blink-z 3.5` (more sensitive) or `--blink-z 5.5`.
+
+## Recording / spectrogram
 
 ```text
 src/fah_eeg/
-  board.py             # Muse 2 session helpers
-  record.py            # CSV recorder CLI
-  viz_spectrogram.py   # live band spectrogram
-scripts/run_in_iterm.sh
-data/sessions/         # recordings (gitignored)
+  stream.py            # UDP feature streamer (+ --demo)
+  record.py / viz_…    # capture tools
+game/                  # Godot 4 project
+  scripts/eeg_bus.gd   # UDP listener autoload
+  scenes/levels/…      # Level 01
+scripts/
+  start_stream.sh / stop_stream.sh / start_game.sh
+  start_record.sh / start_viz.sh / status.sh
 ```

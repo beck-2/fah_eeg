@@ -11,9 +11,16 @@ build/
 .mypy_cache/
 .ruff_cache/
 
+# Godot
+game/.godot/
+game/android/
+*.translation
+export_presets.cfg
+
 # Data & logs
 data/sessions/*
 !data/sessions/.gitkeep
+data/run/
 logs/
 *.csv
 *.tsv

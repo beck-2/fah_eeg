@@ -1,0 +1,100 @@
+[gd_scene load_steps=2 format=3 uid="uid://mainhub001"]
+
+[ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+
+[node name="Main" type="Node2D"]
+script = ExtResource("1_main")
+
+[node name="Background" type="ColorRect" parent="."]
+offset_right = 1280.0
+offset_bottom = 720.0
+color = Color(0.05, 0.08, 0.11, 1)
+
+[node name="Title" type="Label" parent="."]
+offset_left = 48.0
+offset_top = 48.0
+offset_right = 900.0
+offset_bottom = 120.0
+theme_override_font_sizes/font_size = 42
+text = "FAH EEG"
+
+[node name="Subtitle" type="Label" parent="."]
+offset_left = 48.0
+offset_top = 110.0
+offset_right = 1000.0
+offset_bottom = 150.0
+theme_override_colors/font_color = Color(0.65, 0.78, 0.88, 1)
+theme_override_font_sizes/font_size = 18
+text = "Mind-controlled prototype · Muse 2 → Python → Godot UDP"
+
+[node name="UI" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 1280.0
+offset_bottom = 720.0
+
+[node name="Status" type="Label" parent="UI"]
+layout_mode = 0
+offset_left = 48.0
+offset_top = 190.0
+offset_right = 1000.0
+offset_bottom = 230.0
+theme_override_font_sizes/font_size = 16
+text = "Waiting for EEG…"
+
+[node name="CalmLabel" type="Label" parent="UI"]
+layout_mode = 0
+offset_left = 48.0
+offset_top = 250.0
+offset_right = 200.0
+offset_bottom = 280.0
+text = "Calm"
+
+[node name="CalmBar" type="ProgressBar" parent="UI"]
+layout_mode = 0
+offset_left = 120.0
+offset_top = 250.0
+offset_right = 520.0
+offset_bottom = 278.0
+max_value = 100.0
+show_percentage = false
+
+[node name="FocusLabel" type="Label" parent="UI"]
+layout_mode = 0
+offset_left = 48.0
+offset_top = 300.0
+offset_right = 200.0
+offset_bottom = 330.0
+text = "Focus"
+
+[node name="FocusBar" type="ProgressBar" parent="UI"]
+layout_mode = 0
+offset_left = 120.0
+offset_top = 300.0
+offset_right = 520.0
+offset_bottom = 328.0
+max_value = 100.0
+show_percentage = false
+
+[node name="PlayButton" type="Button" parent="UI"]
+layout_mode = 0
+offset_left = 48.0
+offset_top = 380.0
+offset_right = 420.0
+offset_bottom = 440.0
+theme_override_font_sizes/font_size = 18
+text = "Play Level 01 — Blink Flash"
+
+[node name="Hint" type="Label" parent="UI"]
+layout_mode = 0
+offset_left = 48.0
+offset_top = 480.0
+offset_right = 1100.0
+offset_bottom = 580.0
+theme_override_colors/font_color = Color(0.55, 0.65, 0.72, 1)
+theme_override_font_sizes/font_size = 14
+text = "Level 01: white screen flashes red 50ms on each blink.
+Start live stream first (iTerm):
+  ./scripts/start_stream.sh
+  ./scripts/start_game.sh
+Less sensitive default; tune: --blink-z 4.5 (more) or --blink-z 6 (less)"

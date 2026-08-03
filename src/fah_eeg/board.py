@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Callable, Iterator
 
 from brainflow.board_shim import BoardIds, BoardShim, BrainFlowInputParams
 
@@ -79,3 +79,27 @@ def muse_session(
             board.release_session()
         except Exception:
             pass
+
+
+def wait_for_board_data(
+    board: BoardShim,
+    *,
+    timeout_sec: float = 20.0,
+    poll_sec: float = 0.1,
+    should_stop: Callable[[], bool] | None = None,
+):
+    """Block until get_board_data returns samples, or timeout/stop.
+
+    Returns the first non-empty matrix, or None.
+    """
+    import time
+
+    deadline = time.monotonic() + timeout_sec
+    while time.monotonic() < deadline:
+        if should_stop and should_stop():
+            return None
+        data = board.get_board_data()
+        if data.size:
+            return data
+        time.sleep(poll_sec)
+    return None

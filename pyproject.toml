@@ -20,6 +20,7 @@ dependencies = [
 [project.scripts]
 fah-record = "fah_eeg.record:main"
 fah-spectrogram = "fah_eeg.viz_spectrogram:main"
+fah-stream = "fah_eeg.stream:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
