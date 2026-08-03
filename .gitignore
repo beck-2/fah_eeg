@@ -1,0 +1,33 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Data & logs
+data/sessions/*
+!data/sessions/.gitkeep
+logs/
+*.csv
+*.tsv
+*.edf
+*.bdf
+brainflow.log
+*.log
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Env
+.env
+.env.*

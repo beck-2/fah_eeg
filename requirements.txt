@@ -1,0 +1,6 @@
+brainflow>=5.22.0
+numpy>=1.26
+scipy>=1.11
+matplotlib>=3.8
+pyqtgraph>=0.13
+PyQt6>=6.6
