@@ -10,6 +10,8 @@ const DEFAULT_PORT := 14141
 var port: int = DEFAULT_PORT
 var calm: float = 0.0
 var focus: float = 0.0
+var valence: float = 0.5
+var faa: float = 0.0
 var blink: float = 0.0
 var blink_z: float = 0.0
 var blink_count: int = 0
@@ -77,6 +79,8 @@ func _apply_features(data: Dictionary) -> void:
 	_last_packet_usec = Time.get_ticks_usec()
 	calm = clampf(float(data.get("calm", 0.0)), 0.0, 1.0)
 	focus = clampf(float(data.get("focus", 0.0)), 0.0, 1.0)
+	valence = clampf(float(data.get("valence", 0.5)), 0.0, 1.0)
+	faa = float(data.get("faa", 0.0))
 	demo = bool(data.get("demo", false))
 	if data.has("blinks"):
 		blink_count = int(data.get("blinks", blink_count))
@@ -89,6 +93,8 @@ func _apply_features(data: Dictionary) -> void:
 func reset_metrics() -> void:
 	calm = 0.0
 	focus = 0.0
+	valence = 0.5
+	faa = 0.0
 	blink = 0.0
 	blink_z = 0.0
 	blink_count = 0

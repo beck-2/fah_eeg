@@ -6,7 +6,7 @@
 #   ./scripts/start_psd.sh --serial-number Muse-E88D
 #   ./scripts/start_psd.sh --channel 2   # AF8
 #
-# Note: Muse BLE is exclusive — stop stream/viz/record first if connected.
+# Note: Muse BLE is exclusive — stop_stream first if the game stream is connected.
 set -euo pipefail
 # shellcheck disable=SC1091
 source "$(cd "$(dirname "$0")" && pwd)/_lib.sh"
@@ -35,4 +35,4 @@ launch_ble_job "psd" "$PSD_PID" "$PSD_LOG" \
 
 echo "CSV: $OUT"
 echo "Stop with: $ROOT/scripts/stop_psd.sh  (or close the plot window)"
-echo "Tip: only one Muse client at a time — stop_stream/stop_viz if needed."
+echo "Tip: only one Muse client at a time — stop_stream if needed."

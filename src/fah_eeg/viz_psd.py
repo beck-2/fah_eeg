@@ -45,6 +45,28 @@ BAND_COLORS = [
     (180, 180, 190),
 ]
 
+# Contact quality: green / amber / red thresholds on 0..1 score.
+_CONTACT_GOOD = 0.75
+_CONTACT_OK = 0.40
+
+
+def electrode_contact_score(samples: np.ndarray) -> float:
+    """0 = bad / railed, 1 = solid skin contact (BrainFlow rail + flatness)."""
+    x = np.asarray(samples, dtype=np.float64).ravel()
+    if x.size < 16:
+        return 0.0
+    rail = float(DataFilter.get_railed_percentage(x.copy(), 1))
+    sat = float(np.mean(np.abs(x) >= 980.0))
+    std = float(np.std(x))
+    q = 1.0 - min(1.0, rail * 8.0)
+    if sat > 0.05:
+        q *= max(0.0, 1.0 - sat * 2.0)
+    if std < 5.0:
+        q *= 0.2
+    elif std < 15.0:
+        q *= 0.6
+    return float(np.clip(q, 0.0, 1.0))
+
 
 class CausalBandTracker:
     """Streaming relative band powers via causal Butterworth filter bank.
@@ -164,7 +186,10 @@ class CausalSpectrumTracker:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Live scrolling PSD + relative band traces for Muse 2.",
+        description=(
+            "Live scrolling PSD + relative band traces for Muse 2 "
+            "(records full-session CSV by default)."
+        ),
     )
     parser.add_argument("--serial-number", default=None)
     parser.add_argument("--mac-address", default=None)
@@ -181,7 +206,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--update-ms", type=int, default=100)
     parser.add_argument("--out", type=Path, default=None)
     parser.add_argument("--pid-file", type=Path, default=None)
-    parser.add_argument("--no-record", action="store_true")
+    parser.add_argument(
+        "--no-record",
+        action="store_true",
+        help="Disable CSV session recording (on by default).",
+    )
     return parser.parse_args(argv)
 
 
@@ -254,7 +283,7 @@ def compute_psd_and_bands(
 
 def run_viz(args: argparse.Namespace) -> Path | None:
     import pyqtgraph as pg
-    from pyqtgraph.Qt import QtCore, QtWidgets
+    from pyqtgraph.Qt import QtCore, QtGui, QtWidgets
 
     sampling_rate = BoardShim.get_sampling_rate(MUSE_2_BOARD_ID)
     eeg_channels = BoardShim.get_eeg_channels(MUSE_2_BOARD_ID)
@@ -267,6 +296,7 @@ def run_viz(args: argparse.Namespace) -> Path | None:
 
     board_ch = eeg_channels[args.channel]
     ch_name = names[args.channel] if args.channel < len(names) else f"ch{board_ch}"
+    electrode_names = [names[i] if i < len(names) else f"ch{c}" for i, c in enumerate(eeg_channels)]
     out = None if args.no_record else (args.out or default_session_path("muse2_psd")).resolve()
     options = MuseConnectionOptions(
         serial_number=args.serial_number,
@@ -283,6 +313,7 @@ def run_viz(args: argparse.Namespace) -> Path | None:
     n_bands = len(BANDS)
     f_lo = float(probe_freqs[0])
     f_hi = float(probe_freqs[-1])
+    contact_win = max(64, int(0.5 * sampling_rate))
 
     psd_history: deque[np.ndarray] = deque(maxlen=args.history)
     band_history: deque[np.ndarray] = deque(maxlen=args.history)
@@ -290,8 +321,74 @@ def run_viz(args: argparse.Namespace) -> Path | None:
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
     pg.setConfigOptions(antialias=True)
 
-    win = pg.GraphicsLayoutWidget(title=f"Muse 2 PSD + bands — {ch_name}")
-    win.resize(1200, 820)
+    class HeadsetHud(QtWidgets.QWidget):
+        """4 electrode contact segments (TP9 / AF7 / AF8 / TP10)."""
+
+        def __init__(self, labels: list[str]) -> None:
+            super().__init__()
+            self.labels = labels
+            self.qualities = [0.0] * len(labels)
+            self.setFixedHeight(36)
+            self.setMinimumWidth(280)
+
+        def set_contact(self, qualities: list[float]) -> None:
+            self.qualities = list(qualities)
+            self.update()
+
+        def paintEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+            del event
+            p = QtGui.QPainter(self)
+            p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+            w, h = self.width(), self.height()
+            p.fillRect(0, 0, w, h, QtGui.QColor(18, 18, 22))
+
+            seg_w, seg_h, gap = 36, 16, 6
+            n = len(self.labels)
+            cluster_w = n * seg_w + (n - 1) * gap
+            sx0 = 14
+            seg_y = h - seg_h - 6
+            font = p.font()
+            font.setPixelSize(9)
+            p.setFont(font)
+            p.setPen(QtGui.QColor(150, 150, 160))
+            p.drawText(sx0, 12, "contact")
+            # Right-align segments so empty left space stays clear.
+            sx = max(sx0 + 52, w - cluster_w - 14)
+            for i, name in enumerate(self.labels):
+                q = self.qualities[i] if i < len(self.qualities) else 0.0
+                if q >= _CONTACT_GOOD:
+                    col = QtGui.QColor(70, 185, 110)
+                elif q >= _CONTACT_OK:
+                    col = QtGui.QColor(220, 170, 50)
+                else:
+                    col = QtGui.QColor(200, 70, 65)
+                x = sx + i * (seg_w + gap)
+                p.setPen(QtCore.Qt.PenStyle.NoPen)
+                p.setBrush(col)
+                p.drawRoundedRect(x, seg_y, seg_w, seg_h, 3, 3)
+                fill_h = max(2, int((seg_h - 2) * float(np.clip(q, 0.0, 1.0))))
+                p.setBrush(QtGui.QColor(255, 255, 255, 40))
+                p.drawRoundedRect(x + 1, seg_y + seg_h - 1 - fill_h, seg_w - 2, fill_h, 2, 2)
+                p.setPen(QtGui.QColor(200, 200, 210))
+                p.setFont(font)
+                p.drawText(
+                    QtCore.QRect(x, 2, seg_w, 12),
+                    int(QtCore.Qt.AlignmentFlag.AlignHCenter),
+                    name,
+                )
+            p.end()
+
+    shell = QtWidgets.QWidget()
+    shell.setWindowTitle(f"Muse 2 PSD + bands — {ch_name}")
+    shell.resize(1200, 856)
+    shell_layout = QtWidgets.QVBoxLayout(shell)
+    shell_layout.setContentsMargins(0, 0, 0, 0)
+    shell_layout.setSpacing(0)
+    hud = HeadsetHud(electrode_names)
+    shell_layout.addWidget(hud)
+
+    win = pg.GraphicsLayoutWidget()
+    shell_layout.addWidget(win, stretch=1)
 
     # --- Top: causal fine-frequency scrolling spectrum ---
     plot_scroll = win.addPlot(
@@ -355,9 +452,9 @@ def run_viz(args: argparse.Namespace) -> Path | None:
     win.addItem(status, row=2, col=0)
     status.setText(f"UI ready — connecting Muse… ({out.name if out else 'no-record'})")
 
-    win.show()
-    win.raise_()
-    win.activateWindow()
+    shell.show()
+    shell.raise_()
+    shell.activateWindow()
     app.processEvents()
     write_pid(args.pid_file)
     print(f"PSD+bands window open · {ch_name} · fmax={args.fmax:g}", flush=True)
@@ -366,7 +463,8 @@ def run_viz(args: argparse.Namespace) -> Path | None:
 
     class StreamWorker(QtCore.QThread):
         status = QtCore.Signal(str)
-        frame = QtCore.Signal(object, object, object, int)  # freqs, logp, bands, n
+        # freqs, logp, bands, n, contact qualities
+        frame = QtCore.Signal(object, object, object, int, object)
         failed = QtCore.Signal(str)
 
         def __init__(self) -> None:
@@ -393,6 +491,9 @@ def run_viz(args: argparse.Namespace) -> Path | None:
                     spectrum_tracker = CausalSpectrumTracker(
                         sampling_rate, fmin=1.0, fmax=args.fmax, bw=1.0
                     )
+                    contact_bufs: list[deque[float]] = [
+                        deque(maxlen=contact_win) for _ in eeg_channels
+                    ]
                     try:
                         self.status.emit(
                             f"BLE connect… attempt {attempt} "
@@ -422,6 +523,14 @@ def run_viz(args: argparse.Namespace) -> Path | None:
                             # Warm filter state so first frames aren't garbage.
                             rel0 = bands_tracker.push(chunk0)
                             logp0 = spectrum_tracker.push(chunk0)
+                            for i, ch in enumerate(eeg_channels):
+                                contact_bufs[i].extend(
+                                    float(v) for v in first[ch].astype(np.float64)
+                                )
+                            qualities0 = [
+                                electrode_contact_score(np.fromiter(buf, dtype=np.float64))
+                                for buf in contact_bufs
+                            ]
                             last_data = time.monotonic()
                             self.status.emit(
                                 f"{ch_name} @ {sampling_rate} Hz · "
@@ -432,6 +541,7 @@ def run_viz(args: argparse.Namespace) -> Path | None:
                                 logp0,
                                 rel0,
                                 recorder.samples_written if recorder else 0,
+                                qualities0,
                             )
 
                             while not self._stop.is_set():
@@ -456,9 +566,23 @@ def run_viz(args: argparse.Namespace) -> Path | None:
                                     new = data[board_ch].astype(np.float64)
                                     rel = bands_tracker.push(new)
                                     logp = spectrum_tracker.push(new)
+                                    for i, ch in enumerate(eeg_channels):
+                                        contact_bufs[i].extend(
+                                            float(v) for v in data[ch].astype(np.float64)
+                                        )
+                                    qualities = [
+                                        electrode_contact_score(
+                                            np.fromiter(buf, dtype=np.float64)
+                                        )
+                                        for buf in contact_bufs
+                                    ]
                                     n = recorder.samples_written if recorder else 0
                                     self.frame.emit(
-                                        spectrum_tracker.freq_hz, logp, rel, n
+                                        spectrum_tracker.freq_hz,
+                                        logp,
+                                        rel,
+                                        n,
+                                        qualities,
                                     )
                                 else:
                                     gap = time.monotonic() - last_data
@@ -495,10 +619,19 @@ def run_viz(args: argparse.Namespace) -> Path | None:
     def on_status(text: str) -> None:
         status.setText(text)
 
-    def on_frame(freqs: object, logp: object, bands: object, n: int) -> None:
+    def on_frame(
+        freqs: object,
+        logp: object,
+        bands: object,
+        n: int,
+        qualities: object,
+    ) -> None:
         f = np.asarray(freqs, dtype=np.float64)
         p = np.asarray(logp, dtype=np.float64)
         rel = np.asarray(bands, dtype=np.float64).ravel()
+        qs = [float(q) for q in list(qualities)] if qualities is not None else []
+        if qs:
+            hud.set_contact(qs)
         if f.size == 0 or p.size == 0:
             return
         if f.size != n_freq:
@@ -538,8 +671,13 @@ def run_viz(args: argparse.Namespace) -> Path | None:
         else:
             parts = "bands…"
 
+        contact_txt = " ".join(
+            f"{electrode_names[i]}={'●' if qs[i] >= _CONTACT_GOOD else '◐' if qs[i] >= _CONTACT_OK else '○'}"
+            for i in range(min(len(qs), len(electrode_names)))
+        )
         status.setText(
-            f"{ch_name} | n={n} | {parts} | {out.name if out else 'no-record'}"
+            f"{ch_name} | {contact_txt} | n={n} | {parts} | "
+            f"{out.name if out else 'no-record'}"
         )
 
     def on_failed(message: str) -> None:
@@ -576,7 +714,7 @@ def run_viz(args: argparse.Namespace) -> Path | None:
         cleanup()
         event.accept()
 
-    win.closeEvent = close_event  # type: ignore[method-assign]
+    shell.closeEvent = close_event  # type: ignore[method-assign]
     app.exec()
     return out
 

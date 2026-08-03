@@ -7,7 +7,7 @@ Collect Muse 2 EEG, stream live features, and play low-latency mind-controlled l
 | Layer | Tech | Role |
 |---|---|---|
 | Acquisition | **BrainFlow** (Python) | Muse 2 BLE → raw EEG |
-| Features | `fah-stream` | Band powers, calm/focus/blink @ ~30 Hz |
+| Features | `fah-stream` | Band powers, calm/focus/valence/blink @ ~30 Hz |
 | Transport | **UDP localhost :14141** | Sub-ms hop to game |
 | Game | **Godot 4.7** | Rendering, levels, HUD |
 
@@ -39,20 +39,20 @@ cd ~/fah_eeg
 ## Play (live Muse)
 
 ```bash
-./scripts/start_stream.sh            # or --record to also save CSV
+./scripts/start_stream.sh            # records CSV under data/sessions/ by default
 ./scripts/start_game.sh
 ./scripts/stop_stream.sh
 ```
 
-## Recording / spectrogram
+Pass `--no-record` only if you need to skip CSV.
+## Live PSD visualization
 
 ```bash
-./scripts/start_record.sh
-./scripts/stop_record.sh
-./scripts/start_viz.sh
-./scripts/stop_viz.sh
-./scripts/status.sh
+./scripts/start_psd.sh               # also records CSV under data/sessions/
+./scripts/stop_psd.sh
 ```
+
+(Only one Muse BLE client at a time — stop the game stream first if needed.)
 
 ## Level 01 — Blink Flash
 
@@ -66,16 +66,20 @@ White screen flashes **red for 500ms** on each blink. Use this to judge detectio
 
 Tune: `./scripts/start_stream.sh --blink-z 3.5` (more sensitive) or `--blink-z 5.5`.
 
-## Recording / spectrogram
+## Mood Balance — valence
+
+Steer with **frontal alpha asymmetry** (`valence` from AF7/AF8). Keep the marker inside the drifting zone for score and streak. Hub → **Mood Balance**.
+
+## Layout
 
 ```text
 src/fah_eeg/
   stream.py            # UDP feature streamer (+ --demo)
-  record.py / viz_…    # capture tools
+  viz_psd.py           # live spectrum + contact HUD
 game/                  # Godot 4 project
   scripts/eeg_bus.gd   # UDP listener autoload
-  scenes/levels/…      # Level 01
+  scenes/levels/…      # levels
 scripts/
   start_stream.sh / stop_stream.sh / start_game.sh
-  start_record.sh / start_viz.sh / status.sh
+  start_psd.sh / stop_psd.sh
 ```

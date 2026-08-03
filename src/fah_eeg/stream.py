@@ -158,6 +158,7 @@ def demo_loop(args: argparse.Namespace) -> None:
             t = time.monotonic() - t0
             calm = 0.5 + 0.45 * np.sin(t * 0.7)
             focus = 0.5 + 0.45 * np.sin(t * 1.3 + 1.0)
+            valence = 0.5 + 0.45 * np.sin(t * 0.45 + 2.2)
             slot = int(t / 2.5)
             if slot != last_blink_slot and slot > 0:
                 last_blink_slot = slot
@@ -192,6 +193,8 @@ def demo_loop(args: argparse.Namespace) -> None:
                     },
                     "calm": float(np.clip(calm, 0, 1)),
                     "focus": float(np.clip(focus, 0, 1)),
+                    "valence": float(np.clip(valence, 0, 1)),
+                    "faa": float(0.4 * (valence - 0.5)),
                     "blink": 0.0,
                     "blink_z": 0.0,
                     "channels": {},
@@ -257,8 +260,9 @@ def live_loop(args: argparse.Namespace) -> None:
         flush=True,
     )
     print(
-        "Calm/focus: adaptive rolling z-scores "
-        "(post α/(α+β+½θ) vs front engagement β/(α+θ) + inv TBR), "
+        "Calm/focus/valence: adaptive rolling z-scores "
+        "(post α/(α+β+½θ), front engagement β/(α+θ) + inv TBR, "
+        "FAA ln(α_AF8)−ln(α_AF7) → valence), "
         "~45s baseline, feature τ=1.5s + output τ=3s EMA",
         flush=True,
     )
@@ -338,9 +342,21 @@ def live_loop(args: argparse.Namespace) -> None:
                         )
                         post = np.mean([buffers[ch][-window_samples:] for ch in post_idx], axis=0)
                         front = np.mean([buffers[ch][-window_samples:] for ch in front_chs], axis=0)
+                        # Per-hemisphere frontal alpha for FAA (AF7≈left / AF8≈right).
+                        left_abs = band_powers(
+                            buffers[af7_i][-window_samples:], sampling_rate
+                        )
+                        right_abs = band_powers(
+                            buffers[af8_i][-window_samples:], sampling_rate
+                        )
                         post_rel = relative_bands(band_powers(post, sampling_rate))
                         front_rel = relative_bands(band_powers(front, sampling_rate))
-                        calm_s, focus_s = state.update(post_rel, front_rel)
+                        calm_s, focus_s, valence_s = state.update(
+                            post_rel,
+                            front_rel,
+                            left_alpha=left_abs["alpha"],
+                            right_alpha=right_abs["alpha"],
+                        )
                         send_json(
                             sock,
                             args.host,
@@ -353,6 +369,8 @@ def live_loop(args: argparse.Namespace) -> None:
                                 "front_bands": front_rel,
                                 "calm": float(calm_s),
                                 "focus": float(focus_s),
+                                "valence": float(valence_s),
+                                "faa": float(state.last_metrics.get("faa", 0.0)),
                                 "metrics": state.last_metrics,
                                 "blink": 0.0,
                                 "blink_z": 0.0,
