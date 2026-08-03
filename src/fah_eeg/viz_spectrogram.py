@@ -1,17 +1,18 @@
-"""Live Muse 2 EEG spectrogram / band-power visualization."""
+"""Live Muse 2 EEG spectrogram / band-power visualization with session recording."""
 
 from __future__ import annotations
 
 import argparse
 import sys
-import time
 from collections import deque
+from pathlib import Path
 
 import numpy as np
 from brainflow.board_shim import BoardShim
 from brainflow.data_filter import DataFilter, DetrendOperations, WindowOperations
 
 from fah_eeg.board import MUSE_2_BOARD_ID, MuseConnectionOptions, eeg_channel_names, muse_session
+from fah_eeg.session_io import SessionRecorder, default_session_path
 
 # Classic EEG bands (Hz)
 BANDS = [
@@ -25,7 +26,7 @@ BANDS = [
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Live spectrogram / band-power view for Muse 2 via BrainFlow.",
+        description="Live spectrogram for Muse 2; always records full board CSV.",
     )
     parser.add_argument(
         "--serial-number",
@@ -66,6 +67,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=150,
         help="Plot refresh interval in milliseconds (default: 150).",
     )
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="CSV path (default: data/sessions/muse2_<utc-timestamp>.csv).",
+    )
     return parser.parse_args(argv)
 
 
@@ -77,7 +84,6 @@ def band_powers(signal: np.ndarray, sampling_rate: int) -> np.ndarray:
 
     data = signal.astype(np.float64).copy()
     DataFilter.detrend(data, DetrendOperations.CONSTANT.value)
-    # Welch PSD via BrainFlow
     nfft = DataFilter.get_nearest_power_of_two(sampling_rate)
     overlap = nfft // 2
     try:
@@ -94,17 +100,17 @@ def band_powers(signal: np.ndarray, sampling_rate: int) -> np.ndarray:
     freqs = np.asarray(psd[1])
     dens = np.asarray(psd[0])
     powers = []
+    integrate = getattr(np, "trapezoid", None) or np.trapz
     for _, lo, hi in BANDS:
         mask = (freqs >= lo) & (freqs < hi)
         if np.any(mask):
-            integrate = getattr(np, "trapezoid", None) or np.trapz
             powers.append(float(integrate(dens[mask], freqs[mask])))
         else:
             powers.append(0.0)
     return np.asarray(powers, dtype=np.float64)
 
 
-def run_viz(args: argparse.Namespace) -> None:
+def run_viz(args: argparse.Namespace) -> Path:
     import pyqtgraph as pg
     from pyqtgraph.Qt import QtCore, QtWidgets
 
@@ -121,6 +127,7 @@ def run_viz(args: argparse.Namespace) -> None:
     ch_name = names[args.channel] if args.channel < len(names) else f"ch{board_ch}"
     window_samples = int(args.window_sec * sampling_rate)
     history: deque[np.ndarray] = deque(maxlen=args.history)
+    out = args.out or default_session_path()
 
     options = MuseConnectionOptions(
         serial_number=args.serial_number,
@@ -143,8 +150,7 @@ def run_viz(args: argparse.Namespace) -> None:
         [[(i, name) for i, (name, _, _) in enumerate(BANDS)]]
     )
     cmap = pg.colormap.get("viridis")
-    lut = cmap.getLookupTable(0.0, 1.0, 256)
-    img.setLookupTable(lut)
+    img.setLookupTable(cmap.getLookupTable(0.0, 1.0, 256))
 
     win.nextRow()
     plot_bar = win.addPlot(row=1, col=0, title="Current band power")
@@ -166,16 +172,23 @@ def run_viz(args: argparse.Namespace) -> None:
     status.setText("Connecting to Muse 2…")
 
     buffer = np.zeros(0, dtype=np.float64)
+    recorder = SessionRecorder(out)
     session = muse_session(options)
     board = session.__enter__()
-    status.setText(f"Streaming {ch_name} @ {sampling_rate} Hz — close window to stop")
+    print(f"Recording all board data → {out.resolve()}")
+    status.setText(
+        f"Streaming {ch_name} @ {sampling_rate} Hz | recording {out.name} — close window to stop"
+    )
 
     def tick() -> None:
         nonlocal buffer
         try:
-            data = board.get_current_board_data(window_samples * 2)
+            # Drain ring buffer: every sample is recorded once with board timestamps.
+            data = board.get_board_data()
             if data.size == 0:
                 return
+            recorder.write_matrix(data)
+
             channel = data[board_ch]
             buffer = np.concatenate([buffer, channel])
             if len(buffer) > window_samples * 3:
@@ -188,12 +201,11 @@ def run_viz(args: argparse.Namespace) -> None:
             history.append(powers)
             bar.setOpts(height=powers)
 
-            matrix = np.vstack(history).T  # bands × time
-            # Log scale for readability; avoid log(0)
+            matrix = np.vstack(history).T
             display = np.log10(matrix + 1e-12)
             img.setImage(display, autoLevels=True)
             status.setText(
-                f"{ch_name} | "
+                f"{ch_name} | n={recorder.samples_written} | "
                 + "  ".join(
                     f"{name}: {powers[i]:.2e}" for i, (name, _, _) in enumerate(BANDS)
                 )
@@ -205,13 +217,40 @@ def run_viz(args: argparse.Namespace) -> None:
     timer.timeout.connect(tick)
     timer.start(args.update_ms)
 
+    cleaned = {"done": False}
+
     def cleanup() -> None:
+        if cleaned["done"]:
+            return
+        cleaned["done"] = True
         timer.stop()
+        try:
+            leftover = board.get_board_data()
+            if leftover.size:
+                recorder.write_matrix(leftover)
+        except Exception:
+            pass
+        recorder.close()
         session.__exit__(None, None, None)
+        print(
+            f"Wrote {recorder.samples_written} samples → {out.resolve()}",
+            flush=True,
+        )
 
     app.aboutToQuit.connect(cleanup)
-    win.closeEvent = lambda _event: (cleanup(), app.quit())  # type: ignore[method-assign]
+
+    class _Window(type(win)):
+        pass
+
+    def close_event(event) -> None:  # type: ignore[no-untyped-def]
+        cleanup()
+        event.accept()
+        app.quit()
+
+    win.closeEvent = close_event  # type: ignore[method-assign]
     app.exec()
+    cleanup()
+    return out
 
 
 def main(argv: list[str] | None = None) -> int:

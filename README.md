@@ -43,14 +43,15 @@ If discovery fails:
 ./scripts/run_in_iterm.sh fah-record --seconds 30 --serial-number Muse-XXXX
 ```
 
-## Live spectrogram
+## Live spectrogram (also records)
 
 ```bash
 ./scripts/run_in_iterm.sh fah-spectrogram
 # optional: --channel 0..3  (TP9 / AF7 / AF8 / TP10 typically)
+# optional: --out data/sessions/custom.csv
 ```
 
-Shows scrolling log-power for delta / theta / alpha / beta / gamma plus a current bar chart. Close the window to stop the stream.
+Shows scrolling log-power for delta / theta / alpha / beta / gamma plus a current bar chart. **Every board sample is drained and written to CSV** (named EEG channels + BrainFlow unix `timestamp` + `timestamp_iso`). Close the window to stop streaming and finalize the file.
 
 ## Mac Bluetooth checklist
 
