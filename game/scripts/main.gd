@@ -6,6 +6,7 @@ extends Node2D
 @onready var focus_bar: ProgressBar = $UI/FocusBar
 @onready var play_button: Button = $UI/PlayButton
 @onready var flappy_button: Button = $UI/FlappyButton
+@onready var stare_button: Button = $UI/StareButton
 @onready var fractal_button: Button = $UI/FractalButton
 @onready var mood_button: Button = $UI/MoodButton
 @onready var tree_button: Button = $UI/TreeButton
@@ -14,6 +15,7 @@ extends Node2D
 func _ready() -> void:
 	play_button.pressed.connect(_on_play_pressed)
 	flappy_button.pressed.connect(_on_flappy_pressed)
+	stare_button.pressed.connect(_on_stare_pressed)
 	fractal_button.pressed.connect(_on_fractal_pressed)
 	mood_button.pressed.connect(_on_mood_pressed)
 	tree_button.pressed.connect(_on_tree_pressed)
@@ -44,6 +46,10 @@ func _on_play_pressed() -> void:
 
 func _on_flappy_pressed() -> void:
 	get_tree().change_scene_to_file("res://scenes/levels/level_flappy_blink.tscn")
+
+
+func _on_stare_pressed() -> void:
+	get_tree().change_scene_to_file("res://scenes/levels/level_staring_contest.tscn")
 
 
 func _on_fractal_pressed() -> void:

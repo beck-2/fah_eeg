@@ -94,6 +94,15 @@ offset_bottom = 348.0
 theme_override_font_sizes/font_size = 16
 text = "Blink Flappy Bird"
 
+[node name="StareButton" type="Button" parent="UI"]
+layout_mode = 0
+offset_left = 800.0
+offset_top = 300.0
+offset_right = 1160.0
+offset_bottom = 348.0
+theme_override_font_sizes/font_size = 16
+text = "Staring Contest"
+
 [node name="FractalButton" type="Button" parent="UI"]
 layout_mode = 0
 offset_left = 48.0
@@ -129,5 +138,5 @@ offset_right = 1100.0
 offset_bottom = 620.0
 theme_override_colors/font_color = Color(0.55, 0.65, 0.72, 1)
 theme_override_font_sizes/font_size = 14
-text = "Blink Flappy: blink = flap (Space/click backup).
+text = "Staring Contest: don't blink — fahhh sound on blink (that level only).
 Stream: ./scripts/start_stream.sh — Game: ./scripts/start_game.sh"

@@ -26,7 +26,7 @@ class BlinkDetector:
 
     _buf: np.ndarray | None = None
     _last_fire_mono: float = -1e9
-    _warmed: bool = False
+    _armed: bool = True
 
     def __post_init__(self) -> None:
         self._buf = np.zeros(0, dtype=np.float64)
@@ -40,7 +40,11 @@ class BlinkDetector:
     ) -> tuple[bool, float]:
         if af7.size == 0 and af8.size == 0:
             return False, 0.0
-        n = int(min(af7.size, af8.size)) if af7.size and af8.size else int(max(af7.size, af8.size))
+        n = (
+            int(min(af7.size, af8.size))
+            if af7.size and af8.size
+            else int(max(af7.size, af8.size))
+        )
         if n <= 0:
             return False, 0.0
         a7 = np.asarray(af7[:n] if af7.size else af8[:n], dtype=np.float64)
@@ -68,7 +72,6 @@ class BlinkDetector:
             DataFilter.remove_environmental_noise(
                 sig, self.sampling_rate, NoiseTypes.FIFTY.value
             )
-            # Causal Butterworth for realtime (not zero-phase).
             DataFilter.perform_bandpass(
                 sig,
                 self.sampling_rate,
@@ -90,16 +93,22 @@ class BlinkDetector:
         except Exception:
             return False, 0.0
 
-        # Only consider peak flags in the newest arrivals (+ tiny overlap).
         lookback = max(len(chunk) + 4, 8)
         recent = scores[-lookback:]
         peak_score = float(np.max(recent)) if recent.size else 0.0
-        has_peak = bool(np.any(recent > 0.0))
+        active = bool(np.any(recent > 0.0))
 
-        if not has_peak:
+        # Rising-edge: require a quiet stretch before the next fire so a sticky
+        # peak flag doesn't re-trigger after refractory alone.
+        rising = active and self._armed
+        if not active:
+            self._armed = True
+
+        if not rising:
             return False, peak_score
         if (now_mono - self._last_fire_mono) < self.refractory_sec:
             return False, peak_score
 
         self._last_fire_mono = now_mono
+        self._armed = False
         return True, peak_score
