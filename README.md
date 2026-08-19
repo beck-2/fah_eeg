@@ -1,6 +1,7 @@
 # fah_eeg — Muse 2 + BrainFlow + Godot game
 
 Collect Muse 2 EEG, stream live features, and play low-latency mind-controlled levels.
+Required: MUST USE A MUSE EEG HEADSET
 
 ## Stack
 
